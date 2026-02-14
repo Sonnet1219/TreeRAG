@@ -1,0 +1,12 @@
+# Core runtime
+numpy>=1.26.0
+
+# Environment variable loading (.env)
+python-dotenv>=1.0.1
+
+# Retrieval quality (recommended)
+rank-bm25>=0.2.2
+jieba>=0.42.1
+
+# Optional local models (not required for OpenAI-compatible Qwen API mode)
+# sentence-transformers>=3.0.0
