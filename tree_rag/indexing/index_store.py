@@ -10,9 +10,8 @@ from typing import Any
 
 import numpy as np
 
-from tree_builder.parser import parse_markdown_with_preamble
-from tree_builder.summary import MockSummarizer, generate_summaries
-from tree_builder.tree import build_document_tree
+from tree_builder.builder import build_document
+from tree_builder.summary import MockSummarizer
 from tree_builder.visualizer import document_tree_to_dict
 from tree_rag.indexing.bm25_builder import build_bm25_index
 from tree_rag.indexing.chunker import chunk_content
@@ -59,15 +58,19 @@ def load_tree_input(input_path: Path) -> dict[str, Any]:
     if suffix == ".md":
         LOGGER.info("Reading markdown source: %s", input_path)
         markdown_text = input_path.read_text(encoding="utf-8")
-        LOGGER.info("Parsing markdown and building tree...")
-        sections, preamble = parse_markdown_with_preamble(markdown_text)
-        tree = build_document_tree(
+        LOGGER.info("Parsing markdown and building robust tree...")
+        tree, report = build_document(
+            markdown_text=markdown_text,
             doc_id=input_path.stem,
-            sections=sections,
-            root_content=preamble,
+            summarizer=MockSummarizer(),
+            llm_client=None,
         )
-        LOGGER.info("Generating section summaries for tree nodes...")
-        generate_summaries(tree, MockSummarizer())
+        LOGGER.info(
+            "Tree build report: llm_used=%s low_conf=%d preamble_injected=%d",
+            report.llm_used,
+            len(report.low_confidence_headings),
+            report.preamble_injected,
+        )
         return document_tree_to_dict(tree)
 
     raise ValueError("Input must be a .tree.json or .md file.")

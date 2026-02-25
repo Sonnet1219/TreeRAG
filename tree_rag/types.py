@@ -67,6 +67,8 @@ class RagConfig:
     top_k: int
     dense_weight: float
     bm25_weight: float
+    rerank_diversify: bool
+    rerank_min_unique_nodes: int
 
 
 @dataclass

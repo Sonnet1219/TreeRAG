@@ -17,6 +17,8 @@ class RagConfigTests(unittest.TestCase):
         self.assertEqual(config.top_k, 5)
         self.assertEqual(config.dense_weight, 0.5)
         self.assertEqual(config.bm25_weight, 0.5)
+        self.assertTrue(config.rerank_diversify)
+        self.assertEqual(config.rerank_min_unique_nodes, 0)
         self.assertEqual(config.openai_base_url, "https://api.openai.com/v1")
 
     def test_env_overrides_are_applied(self) -> None:
@@ -32,6 +34,8 @@ class RagConfigTests(unittest.TestCase):
                 "RAG_TOP_K": "7",
                 "RAG_DENSE_WEIGHT": "0.7",
                 "RAG_BM25_WEIGHT": "0.3",
+                "RAG_RERANK_DIVERSIFY": "false",
+                "RAG_RERANK_MIN_UNIQUE_NODES": "3",
             },
             clear=True,
         ):
@@ -46,6 +50,8 @@ class RagConfigTests(unittest.TestCase):
         self.assertEqual(config.top_k, 7)
         self.assertEqual(config.dense_weight, 0.7)
         self.assertEqual(config.bm25_weight, 0.3)
+        self.assertFalse(config.rerank_diversify)
+        self.assertEqual(config.rerank_min_unique_nodes, 3)
 
 
 if __name__ == "__main__":

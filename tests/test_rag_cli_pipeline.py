@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import subprocess
 import sys
 import tempfile
@@ -91,7 +92,7 @@ class RagCliTests(unittest.TestCase):
             input_md = tmp_path / "sample.md"
             output_dir = tmp_path / "index_md"
             input_md.write_text(
-                "# Intro\nLightRAG improves retrieval.\n\n# Methods\nDual-level retrieval uses local and global keywords.\n",
+                "# Intro\nLightRAG improves retrieval.\n\n# Methods\nDual-level retrieval overview.\n\n## Local Retrieval\nUses local keywords.\n\n## Global Retrieval\nUses global context.\n",
                 encoding="utf-8",
             )
 
@@ -100,6 +101,10 @@ class RagCliTests(unittest.TestCase):
             )
             self.assertEqual(index_result.returncode, 0, msg=index_result.stderr)
             self.assertTrue((output_dir / "metadata.json").exists())
+
+            metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
+            node_ids = set(metadata["node_chunk_ids"].keys())
+            self.assertTrue(any(node_id.endswith("_preamble") for node_id in node_ids))
 
 
 if __name__ == "__main__":

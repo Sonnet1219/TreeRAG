@@ -116,9 +116,17 @@ RAG_TIMEOUT_SECONDS=30
 RAG_TOP_K=5
 RAG_DENSE_WEIGHT=0.5
 RAG_BM25_WEIGHT=0.5
+RAG_RERANK_DIVERSIFY=true
+RAG_RERANK_MIN_UNIQUE_NODES=0
 ```
 
 `--mock` mode works fully offline and does not require API keys.
+
+`RAG_RERANK_DIVERSIFY=true` enables coverage-first cross-node diversity in Step 2 rerank selection
+by default to reduce single-node domination in the final evidence set.
+
+`RAG_RERANK_MIN_UNIQUE_NODES=0` means auto mode:
+the final TopN will try to cover at least `min(available_nodes, ceil(top_k/2))` nodes (when possible).
 
 ### Rerank Model (Qwen/OpenAI-compatible API key mode)
 

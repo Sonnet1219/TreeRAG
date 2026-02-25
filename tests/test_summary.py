@@ -56,6 +56,22 @@ This child describes dataset B.
         self.assertTrue(parent.summary)
         self.assertIn("dataset", parent.summary.lower())
 
+    def test_parent_summary_uses_own_content_when_available(self) -> None:
+        markdown = """# Methods
+two-component architecture enables adaptive routing in volatile markets.
+
+## Dataset A
+This child describes dataset A.
+
+## Dataset B
+This child describes dataset B.
+"""
+        tree = build_document_tree("doc", parse_markdown_sections(markdown))
+        generate_summaries(tree, MockSummarizer(max_chars=120))
+
+        parent = tree.root.children[0]
+        self.assertIn("two-component architecture", parent.summary.lower())
+
     def test_empty_content_gets_placeholder_summary(self) -> None:
         markdown = "# Empty Section\n\n"
         tree = build_document_tree("doc", parse_markdown_sections(markdown))

@@ -1,10 +1,10 @@
-"""Document tree data model and construction logic."""
+﻿"""Document tree data model and construction logic."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 import re
-from typing import Optional
+from typing import Iterable, Optional
 
 from tree_builder.parser import Section
 
@@ -35,6 +35,11 @@ class DocumentTree:
     leaf_count: int
     node_count: int
 
+    def recompute_counts(self) -> None:
+        all_nodes = [node for node in traverse_all_nodes(self.root) if node.level > 0]
+        self.node_count = len(all_nodes)
+        self.leaf_count = sum(1 for node in all_nodes if node.is_leaf)
+
 
 def _sanitize_node_suffix(raw_suffix: str, fallback_index: int) -> str:
     suffix = NODE_ID_RE.sub("_", raw_suffix).strip("_")
@@ -54,12 +59,23 @@ def _make_node_id(doc_id: str, section: Section, seen_ids: dict[str, int]) -> st
     return f"{base}_n{count}"
 
 
-def _iter_non_root_nodes(root: TreeNode):
+def _iter_non_root_nodes(root: TreeNode) -> Iterable[TreeNode]:
     stack = list(reversed(root.children))
     while stack:
         node = stack.pop()
         yield node
         stack.extend(reversed(node.children))
+
+
+def traverse_all_nodes(root: TreeNode) -> list[TreeNode]:
+    """Return all nodes in pre-order, including root."""
+    ordered: list[TreeNode] = []
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        ordered.append(node)
+        stack.extend(reversed(node.children))
+    return ordered
 
 
 def build_document_tree(
@@ -92,6 +108,7 @@ def build_document_tree(
         parent = stack[-1]
         heading = section.heading.heading_raw
         heading_path = heading if parent.level == 0 else f"{parent.heading_path} > {heading}"
+
         node = TreeNode(
             node_id=_make_node_id(doc_id, section, seen_ids),
             heading=heading,
@@ -102,14 +119,12 @@ def build_document_tree(
             children=[],
             heading_path=heading_path,
         )
-
         parent.children.append(node)
         stack.append(node)
 
-    all_nodes = list(_iter_non_root_nodes(root))
-    node_count = len(all_nodes)
-    leaf_count = sum(1 for node in all_nodes if node.is_leaf)
-    return DocumentTree(doc_id=doc_id, root=root, leaf_count=leaf_count, node_count=node_count)
+    tree = DocumentTree(doc_id=doc_id, root=root, leaf_count=0, node_count=0)
+    tree.recompute_counts()
+    return tree
 
 
 def postorder_nodes(root: TreeNode) -> list[TreeNode]:
@@ -123,3 +138,42 @@ def postorder_nodes(root: TreeNode) -> list[TreeNode]:
 
     visit(root)
     return ordered
+
+
+def validate_and_fix_tree(root: TreeNode, max_depth: int = 3) -> list[str]:
+    """Validate and repair common structural issues after level inference."""
+    fixes: list[str] = []
+
+    for node in traverse_all_nodes(root):
+        if node.parent is None:
+            if node is not root:
+                node.parent = root
+                root.children.append(node)
+                node.level = 1
+                fixes.append(f"Orphan node adopted: {node.heading}")
+            continue
+
+        if node.level > node.parent.level + 1:
+            old_level = node.level
+            node.level = node.parent.level + 1
+            fixes.append(
+                f"Level gap adjusted: {node.heading} L{old_level} -> L{node.level}"
+            )
+
+        if node.level > max_depth:
+            old_level = node.level
+            node.level = max_depth
+            fixes.append(
+                f"Depth overflow adjusted: {node.heading} L{old_level} -> L{node.level}"
+            )
+
+    for node in list(traverse_all_nodes(root)):
+        if node is root:
+            continue
+        if not node.children and not node.content.strip() and not node.summary.strip():
+            parent = node.parent
+            if parent is not None and node in parent.children:
+                parent.children.remove(node)
+                fixes.append(f"Empty node pruned: {node.heading}")
+
+    return fixes

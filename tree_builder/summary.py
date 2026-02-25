@@ -1,4 +1,4 @@
-"""Summary generation for document trees."""
+﻿"""Summary generation for document trees."""
 
 from __future__ import annotations
 
@@ -30,18 +30,35 @@ class MockSummarizer:
             return self.empty_content_placeholder
         return normalized[: self.max_chars]
 
-    def summarize_parent(self, heading: str, children_summaries: list[str]) -> str:
-        normalized = _normalize_space(" ".join(children_summaries))
-        if not normalized:
-            return self.empty_children_placeholder
-        return normalized[: self.max_chars]
+    def summarize_parent(
+        self,
+        heading: str,
+        children_summaries: list[str],
+        own_content: str = "",
+    ) -> str:
+        own = _normalize_space(own_content)
+        children = _normalize_space(" ".join(children_summaries))
+
+        if own and children:
+            merged = f"{own} {children}"
+            return merged[: self.max_chars]
+        if own:
+            return own[: self.max_chars]
+        if children:
+            return children[: self.max_chars]
+        return self.empty_children_placeholder
 
 
 class Summarizer(Protocol):
     def summarize_leaf(self, heading: str, content: str) -> str:
         """Generate one short summary for a leaf section."""
 
-    def summarize_parent(self, heading: str, children_summaries: list[str]) -> str:
+    def summarize_parent(
+        self,
+        heading: str,
+        children_summaries: list[str],
+        own_content: str = "",
+    ) -> str:
         """Generate one short summary for a parent section."""
 
 
@@ -56,7 +73,12 @@ class LLMSummarizerStub:
             f"LLM summarizer for provider '{self.provider}' is not implemented in this phase."
         )
 
-    def summarize_parent(self, heading: str, children_summaries: list[str]) -> str:
+    def summarize_parent(
+        self,
+        heading: str,
+        children_summaries: list[str],
+        own_content: str = "",
+    ) -> str:
         raise NotImplementedError(
             f"LLM summarizer for provider '{self.provider}' is not implemented in this phase."
         )
@@ -84,15 +106,26 @@ class OpenAICompatibleSummarizer:
         )
         return self._chat_completion(prompt)
 
-    def summarize_parent(self, heading: str, children_summaries: list[str]) -> str:
-        merged = _normalize_space(" ".join(children_summaries))
-        if not merged:
-            merged = "No child summaries available."
+    def summarize_parent(
+        self,
+        heading: str,
+        children_summaries: list[str],
+        own_content: str = "",
+    ) -> str:
+        own = _normalize_space(own_content[:200])
+        children = _normalize_space(" ".join(children_summaries))
+        if not own and not children:
+            children = "No child summaries available."
+
         prompt = (
             "Please summarize the core idea of this section in 1-2 concise sentences.\n"
             f"Heading: {heading}\n"
-            f"Child summaries: {merged}"
         )
+        if own:
+            prompt += f"Section overview content: {own}\n"
+        if children:
+            prompt += f"Child summaries: {children}\n"
+
         return self._chat_completion(prompt)
 
     def _chat_completion(self, user_prompt: str) -> str:
@@ -128,8 +161,8 @@ class OpenAICompatibleSummarizer:
             raise RuntimeError(f"OpenAI request failed: {exc.reason}") from exc
 
         try:
-            payload = json.loads(response_body)
-            content = payload["choices"][0]["message"]["content"]
+            parsed = json.loads(response_body)
+            content = parsed["choices"][0]["message"]["content"]
         except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
             raise RuntimeError("OpenAI response format is invalid.") from exc
 
@@ -179,8 +212,14 @@ def generate_summaries(tree: DocumentTree, summarizer: Summarizer) -> None:
 
         if node.is_leaf:
             node.summary = summarizer.summarize_leaf(node.heading, node.content[:200])
-        else:
+            continue
+
+        children_summaries = [child.summary for child in node.children if child.summary]
+        if node.content.strip():
             node.summary = summarizer.summarize_parent(
                 node.heading,
-                [child.summary for child in node.children if child.summary],
+                children_summaries,
+                own_content=node.content[:200],
             )
+        else:
+            node.summary = summarizer.summarize_parent(node.heading, children_summaries)

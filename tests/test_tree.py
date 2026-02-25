@@ -1,7 +1,9 @@
 from pathlib import Path
 import unittest
 
+from tree_builder.builder import build_document
 from tree_builder.parser import parse_markdown_file, parse_markdown_sections
+from tree_builder.summary import MockSummarizer
 from tree_builder.tree import build_document_tree, postorder_nodes
 
 
@@ -120,6 +122,33 @@ Second.
 
         self.assertEqual(len(ids), len(set(ids)))
         self.assertTrue(any("_n1" in node_id for node_id in ids))
+
+    def test_content_completeness_after_preamble_injection(self) -> None:
+        markdown = """# Intro
+Intro overview content.
+
+## Detail A
+Alpha detail content.
+
+## Detail B
+Beta detail content.
+"""
+        tree, _ = build_document(
+            markdown_text=markdown,
+            doc_id="doc",
+            summarizer=MockSummarizer(),
+            llm_client=None,
+        )
+
+        leaf_text = " ".join(
+            node.content
+            for node in postorder_nodes(tree.root)
+            if node.level > 0 and node.is_leaf and node.content.strip()
+        )
+
+        self.assertIn("Intro overview content.", leaf_text)
+        self.assertIn("Alpha detail content.", leaf_text)
+        self.assertIn("Beta detail content.", leaf_text)
 
 
 if __name__ == "__main__":

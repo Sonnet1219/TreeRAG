@@ -5,7 +5,7 @@ import unittest
 
 from tree_rag.config import load_rag_config
 from tree_rag.indexing.chunker import chunk_content
-from tree_rag.indexing.index_store import build_index_from_tree, load_index, save_index
+from tree_rag.indexing.index_store import build_index_from_tree, load_index, load_tree_input, save_index
 
 
 def _sample_tree() -> dict:
@@ -87,6 +87,28 @@ class IndexStoreTests(unittest.TestCase):
 
         self.assertEqual(metadata["doc_id"], "sample_doc")
         self.assertGreater(metadata["chunk_count"], 0)
+
+    def test_markdown_input_includes_preamble_leaf_nodes(self) -> None:
+        markdown = """# Methods
+We propose a two-component architecture.
+
+## Encoder
+Encoder details.
+
+## Router
+Router details.
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            md_path = Path(tmpdir) / "paper.md"
+            md_path.write_text(markdown, encoding="utf-8")
+
+            tree_data = load_tree_input(md_path)
+            config = load_rag_config(load_dotenv=False)
+            index = build_index_from_tree(tree_data=tree_data, config=config, mock=True)
+
+        preamble_nodes = [node_id for node_id in index.nodes if node_id.endswith("_preamble")]
+        self.assertTrue(preamble_nodes)
+        self.assertGreaterEqual(len(index.nodes), 3)
 
 
 if __name__ == "__main__":

@@ -1,17 +1,13 @@
-"""Markdown heading parsing and section splitting utilities."""
+﻿"""Markdown heading parsing and section splitting utilities."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import re
 
-
-ATX_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
-NUMBERED_HEADING_RE = re.compile(r"^([\d]+(?:\.[\d]+)*)[\.\s\)\-]?\s*(.+)$")
-LETTER_NUMBERED_HEADING_RE = re.compile(r"^([A-Z](?:\.[\d]+)+)[\.\s\)\-]?\s*(.+)$")
-FENCE_RE = re.compile(r"^\s*```")
-TRAILING_HASH_RE = re.compile(r"\s+#+\s*$")
+from tree_builder.preprocessor import RawHeading, extract_raw_headings, normalize_heading
+from tree_builder.rule_engine import DocumentContext, infer_level, infer_levels
+from tree_builder.signals import extract_all_signals, extract_heading_signals
 
 
 @dataclass
@@ -31,97 +27,79 @@ class Section:
 
 
 def parse_heading_line(line: str) -> HeadingInfo | None:
-    """Parse one ATX heading line and infer level."""
-    match = ATX_HEADING_RE.match(line)
-    if match is None:
+    """Parse one heading line and infer a level."""
+    normalized = normalize_heading(line)
+    if normalized is None:
         return None
 
-    hashes = match.group(1)
-    heading_raw = TRAILING_HASH_RE.sub("", match.group(2)).strip()
+    raw_heading = RawHeading(
+        line_index=0,
+        hash_count=int(normalized["hash_count"]),
+        raw_text=str(normalized["raw_text"]),
+        has_hash_marker=bool(normalized["has_hash_marker"]),
+        line_text=line,
+    )
 
-    numbering: str | None = None
-    clean_title = heading_raw
-    for pattern in (NUMBERED_HEADING_RE, LETTER_NUMBERED_HEADING_RE):
-        number_match = pattern.match(heading_raw)
-        if number_match is not None:
-            numbering = number_match.group(1)
-            clean_title = number_match.group(2).strip()
-            break
-
-    if numbering is None:
-        inferred_level = min(len(hashes), 3)
-    else:
-        inferred_level = min(numbering.count(".") + 1, 3)
-
+    signals = extract_heading_signals(0, raw_heading)
+    level, _, _ = infer_level(signals, DocumentContext([signals]))
     return HeadingInfo(
-        hash_count=len(hashes),
-        numbering=numbering,
-        clean_title=clean_title,
-        inferred_level=inferred_level,
-        heading_raw=heading_raw,
+        hash_count=raw_heading.hash_count,
+        numbering=signals.numbering,
+        clean_title=signals.heading_text,
+        inferred_level=level,
+        heading_raw=raw_heading.raw_text,
     )
 
 
-def _parse_sections_with_preamble(text: str) -> tuple[list[Section], str]:
+def _build_sections(
+    lines: list[str],
+    raw_headings: list[RawHeading],
+) -> list[Section]:
+    if not raw_headings:
+        return []
+
+    signals = extract_all_signals(raw_headings)
+    inferences = infer_levels(signals)
     sections: list[Section] = []
-    preamble_lines: list[str] = []
 
-    current_heading: HeadingInfo | None = None
-    current_lines: list[str] = []
-    in_fence = False
-    section_index = 0
-
-    for line in text.splitlines():
-        if FENCE_RE.match(line):
-            in_fence = not in_fence
-            if current_heading is None:
-                preamble_lines.append(line)
-            else:
-                current_lines.append(line)
-            continue
-
-        if not in_fence:
-            heading = parse_heading_line(line)
-            if heading is not None:
-                if current_heading is not None:
-                    sections.append(
-                        Section(
-                            heading=current_heading,
-                            content="\n".join(current_lines).strip(),
-                            index=section_index,
-                        )
-                    )
-                section_index += 1
-                current_heading = heading
-                current_lines = []
-                continue
-
-        if current_heading is None:
-            preamble_lines.append(line)
-        else:
-            current_lines.append(line)
-
-    if current_heading is not None:
+    for index, heading in enumerate(raw_headings):
+        start = heading.line_index + 1
+        end = raw_headings[index + 1].line_index if index + 1 < len(raw_headings) else len(lines)
+        content = "\n".join(lines[start:end]).strip()
+        inference = inferences[index]
         sections.append(
             Section(
-                heading=current_heading,
-                content="\n".join(current_lines).strip(),
-                index=section_index,
+                heading=HeadingInfo(
+                    hash_count=heading.hash_count,
+                    numbering=inference.signals.numbering,
+                    clean_title=inference.signals.heading_text,
+                    inferred_level=inference.inferred_level,
+                    heading_raw=heading.raw_text,
+                ),
+                content=content,
+                index=index + 1,
             )
         )
 
-    return sections, "\n".join(preamble_lines).strip()
+    return sections
 
 
 def parse_markdown_sections(text: str) -> list[Section]:
-    """Parse markdown text into sections keyed by headings."""
-    sections, _ = _parse_sections_with_preamble(text)
-    return sections
+    """Parse markdown text into sections keyed by inferred heading levels."""
+    lines = text.splitlines()
+    raw_headings, _ = extract_raw_headings(lines)
+    return _build_sections(lines, raw_headings)
 
 
 def parse_markdown_with_preamble(text: str) -> tuple[list[Section], str]:
     """Parse sections and return text before first heading as preamble."""
-    return _parse_sections_with_preamble(text)
+    lines = text.splitlines()
+    raw_headings, _ = extract_raw_headings(lines)
+    sections = _build_sections(lines, raw_headings)
+    if not raw_headings:
+        return sections, text.strip()
+    preamble = "\n".join(lines[: raw_headings[0].line_index]).strip()
+    return sections, preamble
 
 
 def parse_markdown_file(path: Path) -> list[Section]:

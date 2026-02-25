@@ -28,6 +28,17 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
+def _get_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    if raw in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if raw in {"0", "false", "f", "no", "n", "off"}:
+        return False
+    return default
+
+
 def load_rag_config(load_dotenv: bool = True) -> RagConfig:
     if load_dotenv:
         load_env()
@@ -45,4 +56,6 @@ def load_rag_config(load_dotenv: bool = True) -> RagConfig:
         top_k=max(1, _get_int("RAG_TOP_K", 5)),
         dense_weight=_get_float("RAG_DENSE_WEIGHT", 0.5),
         bm25_weight=_get_float("RAG_BM25_WEIGHT", 0.5),
+        rerank_diversify=_get_bool("RAG_RERANK_DIVERSIFY", True),
+        rerank_min_unique_nodes=max(0, _get_int("RAG_RERANK_MIN_UNIQUE_NODES", 0)),
     )
