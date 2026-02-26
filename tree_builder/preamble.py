@@ -42,6 +42,6 @@ def generate_preamble_summaries(root: TreeNode, summarizer: Summarizer) -> int:
     for node in postorder_nodes(root):
         if not node.node_id.endswith("_preamble"):
             continue
-        node.summary = summarizer.summarize_leaf(node.heading, node.content[:200])
+        node.summary = summarizer.summarize_leaf(node.heading, node.content)
         summarized += 1
     return summarized

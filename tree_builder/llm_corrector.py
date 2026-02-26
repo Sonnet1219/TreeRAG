@@ -123,12 +123,13 @@ def _build_partial_mode_prompt(
         if result.confidence < threshold
     )
 
+    context_str = "\n".join(context_lines)
     return (
         "You are a document structure analysis expert.\n"
         "Some headings are uncertain and marked with [?]. Infer only uncertain heading levels.\n"
         "Return strict JSON object with key 'results'.\n"
         "Each item: index, level, reasoning.\n\n"
-        f"Structure context:\n{'\n'.join(context_lines)}\n\n"
+        f"Structure context:\n{context_str}\n\n"
         f"Uncertain headings:\n{uncertain_lines}\n"
     )
 

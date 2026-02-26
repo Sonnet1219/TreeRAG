@@ -92,17 +92,18 @@ class OpenAICompatibleSummarizer:
     base_url: str
     model: str
     timeout_seconds: float = 30.0
-    max_tokens: int = 120
+    max_tokens: int = 250
     temperature: float = 0.2
+    max_content_chars: int = 2000
 
     def summarize_leaf(self, heading: str, content: str) -> str:
-        snippet = _normalize_space(content[:200])
+        snippet = _normalize_space(content[:self.max_content_chars])
         if not snippet:
             snippet = "No content available."
         prompt = (
-            "Please summarize the core idea of this section in 1-2 concise sentences.\n"
+            "Summarize this section in 2-3 concise sentences, covering the main points.\n"
             f"Heading: {heading}\n"
-            f"Content snippet: {snippet}"
+            f"Content: {snippet}"
         )
         return self._chat_completion(prompt)
 
@@ -112,19 +113,23 @@ class OpenAICompatibleSummarizer:
         children_summaries: list[str],
         own_content: str = "",
     ) -> str:
-        own = _normalize_space(own_content[:200])
-        children = _normalize_space(" ".join(children_summaries))
-        if not own and not children:
-            children = "No child summaries available."
+        own = _normalize_space(own_content[:self.max_content_chars])
+
+        per_child_limit = max(200, self.max_content_chars // max(len(children_summaries), 1))
+        formatted_children = "\n".join(
+            f"  - {s[:per_child_limit]}" for s in children_summaries
+        ) if children_summaries else ""
 
         prompt = (
-            "Please summarize the core idea of this section in 1-2 concise sentences.\n"
+            "Summarize this section in 2-3 concise sentences based on its subsections.\n"
             f"Heading: {heading}\n"
         )
         if own:
-            prompt += f"Section overview content: {own}\n"
-        if children:
-            prompt += f"Child summaries: {children}\n"
+            prompt += f"Section overview: {own}\n"
+        if formatted_children:
+            prompt += f"Subsections:\n{formatted_children}\n"
+        if not own and not formatted_children:
+            prompt += "No content available.\n"
 
         return self._chat_completion(prompt)
 
@@ -191,8 +196,9 @@ def build_llm_summarizer_from_env(provider: str) -> Summarizer:
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
     timeout_seconds = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
-    max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "120"))
+    max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "250"))
     temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.2"))
+    max_content_chars = int(os.getenv("OPENAI_MAX_CONTENT_CHARS", "2000"))
 
     return OpenAICompatibleSummarizer(
         api_key=api_key,
@@ -201,6 +207,7 @@ def build_llm_summarizer_from_env(provider: str) -> Summarizer:
         timeout_seconds=timeout_seconds,
         max_tokens=max_tokens,
         temperature=temperature,
+        max_content_chars=max_content_chars,
     )
 
 
@@ -211,15 +218,19 @@ def generate_summaries(tree: DocumentTree, summarizer: Summarizer) -> None:
             continue
 
         if node.is_leaf:
-            node.summary = summarizer.summarize_leaf(node.heading, node.content[:200])
+            node.summary = summarizer.summarize_leaf(node.heading, node.content)
             continue
 
-        children_summaries = [child.summary for child in node.children if child.summary]
+        children_summaries = [
+            f"{child.heading}: {child.summary}"
+            for child in node.children
+            if child.summary
+        ]
         if node.content.strip():
             node.summary = summarizer.summarize_parent(
                 node.heading,
                 children_summaries,
-                own_content=node.content[:200],
+                own_content=node.content,
             )
         else:
             node.summary = summarizer.summarize_parent(node.heading, children_summaries)

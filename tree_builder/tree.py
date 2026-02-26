@@ -170,7 +170,7 @@ def validate_and_fix_tree(root: TreeNode, max_depth: int = 3) -> list[str]:
     for node in list(traverse_all_nodes(root)):
         if node is root:
             continue
-        if not node.children and not node.content.strip() and not node.summary.strip():
+        if not node.children and not node.content.strip():
             parent = node.parent
             if parent is not None and node in parent.children:
                 parent.children.remove(node)
